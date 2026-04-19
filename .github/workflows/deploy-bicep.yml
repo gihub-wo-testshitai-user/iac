@@ -29,5 +29,5 @@ jobs:
         run: |
           az deployment group create \
             --resource-group ${{ inputs.resourceGroup }} \
-            --template-file iac/main.bicep \
+            --template-file main.bicep \
             --parameters location=${{ inputs.location }}
