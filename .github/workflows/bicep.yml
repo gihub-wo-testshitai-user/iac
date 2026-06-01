@@ -17,17 +17,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ① リポジトリ取得
+      # ① Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ② Azureログイン
+      # ② Azure Login
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ③ 環境・リソースごとの設定
+      # ③ 変数設定
       - name: Set variables
         run: |
           ENV=${{ github.event.inputs.environment }}
@@ -36,7 +36,6 @@ jobs:
           echo "ENV=$ENV" >> $GITHUB_ENV
           echo "RES=$RES" >> $GITHUB_ENV
 
-          # Resource Group 自動切替
           if [ "$ENV" = "dev" ]; then
             echo "RG=dev-RG" >> $GITHUB_ENV
           elif [ "$ENV" = "test" ]; then
@@ -48,51 +47,45 @@ jobs:
             exit 1
           fi
 
-          # ✅ ここ重要（./ を付ける）
-          echo "PARAM_FILE=./iac/bicep/$ENV/$RES.bicepparam" >> $GITHUB_ENV
-
-          # テンプレート切り替え
+      # ✅ ここがポイント：作業ディレクトリを固定
+      - name: Validate deployment
+        working-directory: iac/bicep
+        run: |
           if [ "$RES" = "vnet" ]; then
-            echo "TEMPLATE_FILE=./iac/bicep/main.bicep" >> $GITHUB_ENV
+            TEMPLATE_FILE="main.bicep"
           else
-            echo "TEMPLATE_FILE=./iac/bicep/modules/$RES.bicep" >> $GITHUB_ENV
+            TEMPLATE_FILE="modules/$RES.bicep"
           fi
 
-      # ✅ デバッグ（問題切り分け用）
-      - name: Debug paths
-        run: |
-          echo "Current directory:"
-          pwd
-
-          echo "Files:"
-          ls -R
-
-          echo "Template file:"
-          echo $TEMPLATE_FILE
-
-          echo "Param file:"
-          echo $PARAM_FILE
-
-      # ④ Validate
-      - name: Validate deployment
-        run: |
           az deployment group validate \
             --resource-group $RG \
             --template-file $TEMPLATE_FILE \
-            --parameters @$PARAM_FILE
+            --parameters @$ENV/$RES.bicepparam
 
-      # ⑤ What-if
       - name: What-if deployment
+        working-directory: iac/bicep
         run: |
+          if [ "$RES" = "vnet" ]; then
+            TEMPLATE_FILE="main.bicep"
+          else
+            TEMPLATE_FILE="modules/$RES.bicep"
+          fi
+
           az deployment group what-if \
             --resource-group $RG \
             --template-file $TEMPLATE_FILE \
-            --parameters @$PARAM_FILE
+            --parameters @$ENV/$RES.bicepparam
 
-      # ⑥ Deploy
       - name: Deploy
+        working-directory: iac/bicep
         run: |
+          if [ "$RES" = "vnet" ]; then
+            TEMPLATE_FILE="main.bicep"
+          else
+            TEMPLATE_FILE="modules/$RES.bicep"
+          fi
+
           az deployment group create \
             --resource-group $RG \
             --template-file $TEMPLATE_FILE \
-            --parameters @$PARAM_FILE
+            --parameters @$ENV/$RES.bicepparam
