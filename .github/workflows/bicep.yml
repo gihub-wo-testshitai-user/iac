@@ -1,0 +1,84 @@
+name: Deploy Azure Resources (Bicep)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment (dev / test / prod)'
+        required: true
+        default: dev
+      resource:
+        description: 'Resource to deploy (vnet / nsg)'
+        required: true
+        default: vnet
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ① ソースコード取得
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ② Azureログイン（サービスプリンシパル）
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ③ 環境・リソースごとの変数設定
+      - name: Set variables
+        run: |
+          ENV=${{ github.event.inputs.environment }}
+          RES=${{ github.event.inputs.resource }}
+
+          echo "ENV=$ENV" >> $GITHUB_ENV
+          echo "RES=$RES" >> $GITHUB_ENV
+
+          # Resource Group 自動切替
+          if [ "$ENV" = "dev" ]; then
+            echo "RG=dev-RG" >> $GITHUB_ENV
+          elif [ "$ENV" = "test" ]; then
+            echo "RG=test-RG" >> $GITHUB_ENV
+          elif [ "$ENV" = "prod" ]; then
+            echo "RG=prod-RG" >> $GITHUB_ENV
+          else
+            echo "Invalid environment"
+            exit 1
+          fi
+
+          # パラメータファイル
+          echo "PARAM_FILE=bicep/$ENV/$RES.bicepparam" >> $GITHUB_ENV
+
+          # デプロイ対象テンプレート
+          echo "TEMPLATE_FILE=bicep/modules/$RES.bicep" >> $GITHUB_ENV
+
+          # vnetだけは例外（main経由にする）
+          if [ "$RES" = "vnet" ]; then
+            echo "TEMPLATE_FILE=bicep/main.bicep" >> $GITHUB_ENV
+          fi
+
+      # ④ Validate（事前チェック）
+      - name: Validate deployment
+        run: |
+          az deployment group validate \
+            --resource-group $RG \
+            --template-file $TEMPLATE_FILE \
+            --parameters @$PARAM_FILE
+
+      # ⑤ What-if（差分確認）
+      - name: What-if deployment
+        run: |
+          az deployment group what-if \
+            --resource-group $RG \
+            --template-file $TEMPLATE_FILE \
+            --parameters @$PARAM_FILE
+
+      # ⑥ デプロイ
+      - name: Deploy
+        run: |
+          az deployment group create \
+            --resource-group $RG \
+            --template-file $TEMPLATE_FILE \
+            --parameters @$PARAM_FILE
