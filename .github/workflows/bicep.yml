@@ -21,13 +21,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ② Azureログイン（サービスプリンシパル）
+      # ② Azureログイン
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ③ 環境・リソースごとの変数設定
+      # ③ 環境・リソースごとの設定
       - name: Set variables
         run: |
           ENV=${{ github.event.inputs.environment }}
@@ -36,7 +36,7 @@ jobs:
           echo "ENV=$ENV" >> $GITHUB_ENV
           echo "RES=$RES" >> $GITHUB_ENV
 
-          # Resource Group 切替
+          # Resource Group 自動切替
           if [ "$ENV" = "dev" ]; then
             echo "RG=dev-RG" >> $GITHUB_ENV
           elif [ "$ENV" = "test" ]; then
@@ -48,19 +48,32 @@ jobs:
             exit 1
           fi
 
-          # パラメータファイル（config方式なので1つだけ）
-          echo "PARAM_FILE=iac/bicep/$ENV/$RES.bicepparam" >> $GITHUB_ENV
+          # ✅ ここ重要（./ を付ける）
+          echo "PARAM_FILE=./iac/bicep/$ENV/$RES.bicepparam" >> $GITHUB_ENV
 
-          # テンプレート選択
+          # テンプレート切り替え
           if [ "$RES" = "vnet" ]; then
-            # VNetは依存関係を扱うため main 経由
-            echo "TEMPLATE_FILE=iac/bicep/main.bicep" >> $GITHUB_ENV
+            echo "TEMPLATE_FILE=./iac/bicep/main.bicep" >> $GITHUB_ENV
           else
-            # 単体リソースはmodule直接
-            echo "TEMPLATE_FILE=iac/bicep/modules/$RES.bicep" >> $GITHUB_ENV
+            echo "TEMPLATE_FILE=./iac/bicep/modules/$RES.bicep" >> $GITHUB_ENV
           fi
 
-      # ④ Validate（構文チェック）
+      # ✅ デバッグ（問題切り分け用）
+      - name: Debug paths
+        run: |
+          echo "Current directory:"
+          pwd
+
+          echo "Files:"
+          ls -R
+
+          echo "Template file:"
+          echo $TEMPLATE_FILE
+
+          echo "Param file:"
+          echo $PARAM_FILE
+
+      # ④ Validate
       - name: Validate deployment
         run: |
           az deployment group validate \
@@ -68,7 +81,7 @@ jobs:
             --template-file $TEMPLATE_FILE \
             --parameters @$PARAM_FILE
 
-      # ⑤ What-if（差分確認）
+      # ⑤ What-if
       - name: What-if deployment
         run: |
           az deployment group what-if \
@@ -76,10 +89,11 @@ jobs:
             --template-file $TEMPLATE_FILE \
             --parameters @$PARAM_FILE
 
-      # ⑥ デプロイ
+      # ⑥ Deploy
       - name: Deploy
         run: |
           az deployment group create \
             --resource-group $RG \
             --template-file $TEMPLATE_FILE \
             --parameters @$PARAM_FILE
+``
