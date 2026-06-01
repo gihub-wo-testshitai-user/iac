@@ -96,4 +96,3 @@ jobs:
             --resource-group $RG \
             --template-file $TEMPLATE_FILE \
             --parameters @$PARAM_FILE
-``
